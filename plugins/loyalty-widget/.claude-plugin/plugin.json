@@ -1,7 +1,7 @@
 {
   "name": "loyalty-widget",
   "description": "Design and build a fully custom loyalty widget skin from a brand's website, source code, code pasted into the chat, or brandbook, with no browser required",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "author": {
     "name": "Optimove Gamification Team"
   }

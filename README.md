@@ -9,7 +9,7 @@ A Claude Code marketplace with one plugin, `loyalty-widget`. It adds the `widget
 /plugin install loyalty-widget@loyalty-widget-skill
 ```
 
-Then ask for it, for example "build a loyalty widget for https://example.com", paste the brand's CSS and say "build the widget from this", or run `/widget-skin`.
+Then ask for it, for example "build a loyalty widget from our website", paste the brand's CSS and say "build the widget from this", or run `/widget-skin`.
 
 ## What it does
 
