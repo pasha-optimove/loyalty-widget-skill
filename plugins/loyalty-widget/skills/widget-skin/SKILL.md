@@ -85,10 +85,10 @@ Layout rules that past skins broke:
 
 | Need | How |
 |---|---|
-| Real data for any tenant | No seed needed. Serve the build and open an address that names the tenant, brand and player (step 5). Add `--region us` to `build.py` when most tenants you'll open are in the US; it only changes which region is tried first. |
+| Real data for any tenant | No seed needed: step 5 serves the build on the tenant the user names. Add `--region us` to `build.py` when most tenants are in the US; it only changes which region is tried first. |
 | Fast first look, offline | No seed. `build.py` invents a sample player and catalog, shown when the file is opened directly. |
 | The brand's real catalog with a simulated player, as a file | Needs the Optimove MCP: one `builder(action='create_widget_skin', brand='<brand>')` call with a minimal skin (below). Save its `html` as `<project>/seed.html`. |
-| A real player, as a file | The same MCP call with `data_mode='live', customer_id='<test player>'`. Rarely needed: serving the build at an address already shows any real player (step 5). Live actions write to that player's account. |
+| A real player, as a file | The same MCP call with `data_mode='live', customer_id='<test player>'`. Rarely needed: step 5 already shows a tenant's real data. Live actions write to that player's account. |
 
 Minimal skin for the seed call. It passes the contract and keeps the request small:
 
@@ -107,19 +107,33 @@ python3 <skill dir>/scripts/build.py <project> [--seed <project>/seed.html] [--o
 
 `CONTRACT FAILED` lists every problem; fix them all before you rebuild. `MISSING` means players would lose those pages. `DANGLING` names nav links to pages that don't exist.
 
-## 5. Serve and verify
+## 5. Serve on a tenant
 
-Serve the built file on the same addresses as the live widget, so the URL names the brand and the player:
+Don't hand over instructions for opening the skin: start it yourself.
 
-```bash
-python3 <skill dir>/scripts/serve.py <file>.html --port 8766
-```
+1. **Ask the user for the tenant id** to preview, if they haven't given one. Only the tenant: the skin uses its default brand and a random player.
+2. **Start the server in the background** (it keeps running), with Python, or with Node 18+ when `python3` is missing or fails to start:
 
-then open `http://localhost:8766/<tenantId>/brand/<brandName>/<playerId>/<page>`, for example `http://localhost:8766/1234/brand/mybrand/test-player/levels`, or `/<tenantId>/<playerId>/<page>` for the default brand. At an address the skin always reads real data from the tenant, brand and player in it, even a build with no seed: it finds the tenant's region, looks up the brand by name and calls the live player APIs. Actions there are real, so click them only for test players. Brands that require signed-in players also need `?token=<player JWT>`. Use `localhost`, not `127.0.0.1`: opti-ls CORS allows only the first. The server answers every path with the current file and never caches, so a rebuild needs only a reload. A sample build also opens straight from `file://`, routed by `#<page>`.
+   ```bash
+   python3 <skill dir>/scripts/serve.py <file>.html --tenant <tenantId> --port 8766
+   node <skill dir>/scripts/serve.mjs <file>.html --tenant <tenantId> --port 8766
+   ```
 
-**Without a browser tool**, stop here: give the user the address to open in their own browser, and say that rendering, overflow, broken images and clicking the actions were not checked. `build.py` has already checked the page contract. Ask them to send a screenshot or describe anything that looks wrong, then iterate.
+   Both check that the tenant exists (EU first, then US; `--region us` flips the order) before serving, pick a random player id, and print the `open` link plus one link per page. The skin at that link reads the tenant's real catalog through the live player APIs; the random player has no progress.
+3. **Read the output and act on it:**
 
-**With a browser tool** (chrome-devtools), check each viewport, desktop `1280x800` and phone `390x844x3,mobile,touch` via `emulate`:
+   | output | do |
+   |---|---|
+   | `open http://localhost:…` | Give the user that link. |
+   | `tenant … was not found in any region` | Tell the user and ask for the tenant id again. |
+   | `port … is already in use` | Run it again with the next port (`--port 8767`). |
+   | `warning: could not confirm the tenant` | The opti-ls hosts were unreachable (offline, or a proxy: set `SSL_CERT_FILE` for Python, `NODE_EXTRA_CA_CERTS` for Node). It still serves; say the data may not load. |
+
+Use `localhost` links, never `127.0.0.1`: opti-ls CORS allows only the first. The server answers every path with the current file and never caches, so after a rebuild the user only reloads. Actions on these pages are real, so don't click them yourself. Only serving has a Node fallback: `build.py` and `brand.py` need Python 3.9+, so without Python say the skin can't be built on this machine. The built file also opens straight from disk with sample data, routed by `#<page>`; mention it as the offline option.
+
+**Without a browser tool**, stop after giving the link, and say that rendering, overflow, broken images and clicking the actions were not checked. `build.py` has already checked the page contract. Ask them to send a screenshot or describe anything that looks wrong, then iterate.
+
+**With a browser tool** (chrome-devtools), open the link and check each viewport, desktop `1280x800` and phone `390x844x3,mobile,touch` via `emulate`:
 
 1. Navigate, read this skill's `scripts/verify.js`, and run `evaluate_script` with its full contents as `function`. Don't use `sourcePath`: chrome-devtools reads files only inside the project's folders, and this skill lives outside them. It opens every page and reports `rendered`, `overflowPx` with the elements that cause it, `brokenImages`, `navActive` and any JS errors. `ok: true` is required.
 2. Screenshot the dashboard, missions and store at least, plus any page you changed.
@@ -129,8 +143,8 @@ Reset emulation when you're done.
 
 ## 6. Iterate
 
-"Make the cards rounder" means edit `styles.css`, rebuild, re-run step 5. Edit only the files the change touches.
+"Make the cards rounder" means edit `styles.css`, rebuild, reload the link (re-run the checks if you have a browser tool). Edit only the files the change touches.
 
 ## Handing over
 
-Tell the user the file path and how to open it, where the brand came from (pasted code, URL, folder or brandbook), which data the build used (invented, seed sample, or live and for which player), what you checked and at which viewports, or that nothing was checked in a browser, and anything you couldn't check, such as states the sample player doesn't reach. A real brand's skin stays local: don't publish it to an artifact or share link without the user's say-so.
+Give the user the `open` link from step 5 and the file path, where the brand came from (pasted code, URL, folder or brandbook), which data the build used (invented, seed sample, or live and for which player), what you checked and at which viewports, or that nothing was checked in a browser, and anything you couldn't check, such as states the sample player doesn't reach. A real brand's skin stays local: don't publish it to an artifact or share link without the user's say-so.
