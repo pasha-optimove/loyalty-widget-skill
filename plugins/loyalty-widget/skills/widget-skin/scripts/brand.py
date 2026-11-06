@@ -289,6 +289,66 @@ def from_url(url: str, analysis: Analysis) -> dict:
     }
 
 
+STYLE_OR_SCRIPT_RE = re.compile(r"<(style|script)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+TAG_RE = re.compile(r"<[^>]+>")
+
+
+def add_color_literals(text: str, analysis: Analysis) -> None:
+    analysis.add_inline(";".join(f"color:{c}" for c in COLOR_RE.findall(text)))
+
+
+def add_text(text: str, name: str, analysis: Analysis, page: PageParser, themes: list[dict]) -> None:
+    suffix = Path(name).suffix.lower()
+    if name.startswith("tailwind.config") or suffix == ".json":
+        themes.append({"file": name, "excerpt": text[:4000]})
+        add_color_literals(text, analysis)
+    elif suffix in {".css", ".scss", ".sass", ".less"}:
+        analysis.add_css(text)
+    elif suffix in SOURCE_SUFFIXES:
+        if suffix not in {".html", ".htm"}:
+            add_color_literals(text, analysis)
+        page.feed(text)
+        for css in page.styles:
+            analysis.add_css(css)
+        page.styles = []
+    else:
+        page.feed(text)
+        for css in page.styles:
+            analysis.add_css(css)
+        page.styles = []
+        rest = TAG_RE.sub(" ", STYLE_OR_SCRIPT_RE.sub(" ", text))
+        analysis.add_css(rest)
+        missed = [c for c in COLOR_RE.findall(rest) if to_hex(c) and to_hex(c) not in analysis.colors]
+        add_color_literals(" ".join(missed), analysis)
+        looks_like_css = re.search(r"[^{}]+\{[^{}]*:[^{}]*;", rest)
+        looks_like_config = "{" in rest and COLOR_RE.search(rest) and re.search(r"\b(theme|colou?rs?|palette|tokens?|value|primary|brand)\b", rest, re.IGNORECASE)
+        if looks_like_config and not looks_like_css:
+            themes.append({"file": name, "excerpt": rest.strip()[:4000]})
+
+
+def from_text(text: str, label: str, analysis: Analysis) -> dict:
+    page = PageParser()
+    themes: list[dict] = []
+    add_text(text, "pasted", analysis, page, themes)
+    for style in page.inline:
+        analysis.add_inline(style)
+    for link in page.font_links:
+        analysis.google += google_families(link)
+    return {
+        "source": label,
+        "title": page.title.strip(),
+        "meta": page.meta,
+        "logos": list(dict.fromkeys(page.logos))[:6],
+        "icons": list(dict.fromkeys(page.icons))[:4],
+        "images": list(dict.fromkeys(page.images))[:8],
+        "fontLinks": list(dict.fromkeys(page.font_links)),
+        "headings": list(dict.fromkeys(page.headings))[:20],
+        "navAndButtons": list(dict.fromkeys(page.nav))[:20],
+        "themeFiles": themes[:4],
+        "charactersRead": len(text),
+    }
+
+
 def from_path(path: Path, analysis: Analysis) -> dict:
     files = [path] if path.is_file() else [
         p for p in path.rglob("*")
@@ -304,18 +364,7 @@ def from_path(path: Path, analysis: Analysis) -> dict:
         except OSError:
             continue
         read.append(str(f))
-        if f.name.startswith("tailwind.config") or f.suffix.lower() == ".json":
-            tailwind.append({"file": str(f), "excerpt": text[:4000]})
-            analysis.add_inline(";".join(f"color:{c}" for c in COLOR_RE.findall(text)))
-        elif f.suffix.lower() in {".css", ".scss", ".sass", ".less"}:
-            analysis.add_css(text)
-        else:
-            if f.suffix.lower() not in {".html", ".htm"}:
-                analysis.add_inline(";".join(f"color:{c}" for c in COLOR_RE.findall(text)))
-            page.feed(text)
-            for css in page.styles:
-                analysis.add_css(css)
-            page.styles = []
+        add_text(text, f.name, analysis, page, tailwind)
     for style in page.inline:
         analysis.add_inline(style)
     for link in page.font_links:
@@ -336,14 +385,22 @@ def from_path(path: Path, analysis: Analysis) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Read a brand's design tokens from a website's source or a local folder, without a browser.")
-    parser.add_argument("source", help="https:// URL, or a local file or folder (site repo, theme, brandbook export)")
+    parser = argparse.ArgumentParser(description="Read a brand's design tokens from a website's source, a local folder, or pasted code, without a browser.")
+    parser.add_argument("source", help="https:// URL; a local file or folder (site repo, theme, token export); or - to read pasted code from stdin")
     args = parser.parse_args()
     analysis = Analysis()
     is_url = re.match(r"^https?://", args.source)
-    if not is_url and not Path(args.source).expanduser().exists():
-        sys.exit(f"{args.source} is neither an http(s) URL nor an existing file or folder")
-    report =from_url(args.source, analysis) if is_url else from_path(Path(args.source).expanduser(), analysis)
+    if args.source == "-":
+        text = sys.stdin.read()
+        if not text.strip():
+            sys.exit("Nothing was pasted on stdin")
+        report = from_text(text[:MAX_BYTES], "pasted code", analysis)
+    elif is_url:
+        report = from_url(args.source, analysis)
+    elif Path(args.source).expanduser().exists():
+        report = from_path(Path(args.source).expanduser(), analysis)
+    else:
+        sys.exit(f"{args.source} is neither an http(s) URL, an existing file or folder, nor - for pasted code")
 
     colorish = {k: v for k, v in analysis.vars.items() if COLOR_RE.search(analysis.resolve(v))}
     ordered = sorted(analysis.vars, key=lambda k: (k not in analysis.root_vars, k not in colorish))
@@ -364,11 +421,12 @@ def main() -> None:
     report["shadows"] = top(analysis.shadows, 4)
     warnings = []
     if len(analysis.colors) < 4:
-        warnings.append(
-            "Very little styling found in the source. The site probably builds its look with JavaScript at runtime; read it in a browser instead."
-            if is_url else
-            "Very little styling found in these files. The look probably comes from a theme API, a design-token package or utility classes; point this at the token files or ask for a brandbook."
-        )
+        if args.source == "-":
+            warnings.append("Very little styling found in the pasted code. Ask for the site's CSS files, its design tokens or theme config, or a brandbook.")
+        elif is_url:
+            warnings.append("Very little styling found in the source. The site probably builds its look with JavaScript at runtime; ask the user to paste the page's rendered code or its CSS, or read it in a browser if one is available.")
+        else:
+            warnings.append("Very little styling found in these files. The look probably comes from a theme API, a design-token package or utility classes; point this at the token files or ask for a brandbook.")
     if is_url and report["stylesheets"]["failed"]:
         warnings.append("Some stylesheets could not be read; colors and fonts may be incomplete.")
     report["warnings"] = warnings

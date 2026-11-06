@@ -1,6 +1,6 @@
 ---
 name: widget-skin
-description: Design and build a fully custom gamify (opti-ls) loyalty widget skin — dashboard, levels, missions, tournaments, badges, store, lootboxes and profile — from a brand's website, its source code or a brandbook, as one self-contained HTML file. Brand tokens are read from source over HTTP or from local files, without opening a browser. Pages are written as local fragments, checked against the page contract, assembled with the bundled GamifySDK, and checked in a real browser on desktop and phone. Use when asked to create, skin, theme, restyle or iterate on a loyalty widget, rewards hub or gamify UI for a brand, e.g. "build a loyalty widget for https://example.com", "make the missions page look better", "skin the widget in our brandbook".
+description: Design and build a fully custom gamify (opti-ls) loyalty widget skin — dashboard, levels, missions, tournaments, badges, store, lootboxes and profile — from a brand's website, its source code, code pasted into the chat, or a brandbook, as one self-contained HTML file. Brand tokens are read from pasted code, over HTTP or from local files, without opening a browser. Pages are written as local fragments, checked against the page contract, assembled with the bundled GamifySDK, and checked in a browser on desktop and phone when a browser tool is available. Use when asked to create, skin, theme, restyle or iterate on a loyalty widget, rewards hub or gamify UI for a brand, e.g. "build a loyalty widget for https://example.com", "make the missions page look better", "skin the widget in our brandbook", "here is our CSS, build the widget from it".
 ---
 
 # Widget skin
@@ -15,25 +15,36 @@ Everything it needs ships with the skill: `scripts/skin.py` (page contract, samp
 
 ## 1. Pull the brand
 
-Read the brand from its source first, with no browser:
+Read the brand from its source with `brand.py`. No browser is needed for any of these:
 
 ```bash
 python3 <skill dir>/scripts/brand.py <source>
 ```
 
-`<source>` is any of:
+| Source | `<source>` | What it reads |
+|---|---|---|
+| Code the user pasted into the chat | `-`, with the paste on stdin | Anything, mixed freely: a page's HTML source, CSS, SCSS, a Tailwind config, design-token JSON, a theme object. HTML is parsed, `<style>` blocks and raw CSS are read as CSS, and colors written anywhere else count too |
+| A website URL | the URL | The page's HTML, every stylesheet it links or imports, inline styles and Google Fonts links, over plain HTTP |
+| A local folder | the path | A site repo, theme or design-token package: CSS/SCSS/LESS, HTML and templates, components (`.tsx`, `.vue`, `.svelte`…), Tailwind config and `theme`/`tokens`/`colors` files. `node_modules`, `dist` and `build` are skipped |
+| A single file | the path | One stylesheet, token file or exported brandbook page |
 
-| Source | What it reads |
-|---|---|
-| A website URL | The page's HTML, every stylesheet it links or imports, inline styles and Google Fonts links, over plain HTTP |
-| A local folder | A site repo, theme or design-token package: CSS/SCSS/LESS, HTML and templates, components (`.tsx`, `.vue`, `.svelte`…), Tailwind config and `theme`/`tokens`/`colors` files. `node_modules`, `dist` and `build` are skipped |
-| A single file | One stylesheet, token file or exported brandbook page |
+For pasted code, write the paste to a file exactly as given, byte for byte, then pipe it in. This avoids shell quoting:
 
-It prints JSON: the site's CSS variables (`:root` first), colors ranked overall and by role (background, text, border, `/0.35` marks alpha), fonts (Google Fonts, `@font-face`, used in CSS, used on headings), corner radii, shadows, logo, icon and image URLs, and the headings and menu/button labels for the brand's voice. Behind a corporate proxy, set `SSL_CERT_FILE` to a bundle that includes the proxy's certificate.
+```bash
+python3 <skill dir>/scripts/brand.py - < <project>/brand-source.txt
+```
+
+It prints JSON: CSS variables (`:root` first), colors ranked overall and by role (background, text, border, `/0.35` marks alpha), fonts (Google Fonts, `@font-face`, used in CSS, used on headings), corner radii, shadows, logo, icon and image URLs, the headings and menu/button labels for the brand's voice, and `themeFiles` with the raw excerpt of any Tailwind config or token file, so you can see what each color is called (`primary`, `accent`, `surface`). Behind a corporate proxy, set `SSL_CERT_FILE` to a bundle that includes the proxy's certificate for URLs.
 
 From a brandbook PDF or images, read colors, type, radius, imagery and tone of voice from it directly.
 
-**Fall back to the browser only when `warnings` says the source has almost no styling** (the site builds its look with JavaScript at runtime) or when the user asks for screenshots. Then open it with chrome-devtools in an isolated context, take a screenshot, and read the computed tokens:
+**When `warnings` says there is almost no styling**, the site builds its look with JavaScript at runtime. Ask the user to paste one of these instead, in this order:
+
+1. The site's CSS files, or its design tokens / Tailwind / theme config, if they have the code.
+2. The rendered page: in their own browser, open developer tools, right-click `<html>` in Elements, choose Copy > Copy outerHTML, and paste it.
+3. A brandbook, or the brand's main colors and fonts in words.
+
+Open a browser yourself only if a browser tool (chrome-devtools) is available and the user hasn't said not to. Then read the computed tokens:
 
 ```js
 () => {
@@ -96,7 +107,7 @@ python3 <skill dir>/scripts/build.py <project> [--seed <project>/seed.html] [--o
 
 `CONTRACT FAILED` lists every problem; fix them all before you rebuild. `MISSING` means players would lose those pages. `DANGLING` names nav links to pages that don't exist.
 
-## 5. Verify in the browser
+## 5. Serve and verify
 
 Serve the built file on the same addresses as the live widget, so the URL names the brand and the player:
 
@@ -106,7 +117,9 @@ python3 <skill dir>/scripts/serve.py <file>.html --port 8766
 
 then open `http://localhost:8766/<tenantId>/brand/<brandName>/<playerId>/<page>`, for example `http://localhost:8766/1234/brand/mybrand/test-player/levels`, or `/<tenantId>/<playerId>/<page>` for the default brand. At an address the skin always reads real data from the tenant, brand and player in it, even a build with no seed: it finds the tenant's region, looks up the brand by name and calls the live player APIs. Actions there are real, so click them only for test players. Brands that require signed-in players also need `?token=<player JWT>`. Use `localhost`, not `127.0.0.1`: opti-ls CORS allows only the first. The server answers every path with the current file and never caches, so a rebuild needs only a reload. A sample build also opens straight from `file://`, routed by `#<page>`.
 
-For each viewport, desktop `1280x800` and phone `390x844x3,mobile,touch` via `emulate`:
+**Without a browser tool**, stop here: give the user the address to open in their own browser, and say that rendering, overflow, broken images and clicking the actions were not checked. `build.py` has already checked the page contract. Ask them to send a screenshot or describe anything that looks wrong, then iterate.
+
+**With a browser tool** (chrome-devtools), check each viewport, desktop `1280x800` and phone `390x844x3,mobile,touch` via `emulate`:
 
 1. Navigate, read this skill's `scripts/verify.js`, and run `evaluate_script` with its full contents as `function`. Don't use `sourcePath`: chrome-devtools reads files only inside the project's folders, and this skill lives outside them. It opens every page and reports `rendered`, `overflowPx` with the elements that cause it, `brokenImages`, `navActive` and any JS errors. `ok: true` is required.
 2. Screenshot the dashboard, missions and store at least, plus any page you changed.
@@ -120,4 +133,4 @@ Reset emulation when you're done.
 
 ## Handing over
 
-Tell the user the file path and how to open it, which data the build used (invented, seed sample, or live and for which player), what you checked and at which viewports, and anything you couldn't check, such as states the sample player doesn't reach. A real brand's skin stays local: don't publish it to an artifact or share link without the user's say-so.
+Tell the user the file path and how to open it, where the brand came from (pasted code, URL, folder or brandbook), which data the build used (invented, seed sample, or live and for which player), what you checked and at which viewports, or that nothing was checked in a browser, and anything you couldn't check, such as states the sample player doesn't reach. A real brand's skin stays local: don't publish it to an artifact or share link without the user's say-so.

@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "Claude Code skills for building custom gamify (opti-ls) loyalty widget skins",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "plugins": [
     {
       "name": "loyalty-widget",
       "source": "./plugins/loyalty-widget",
-      "description": "Design and build a fully custom loyalty widget skin from a brand's website or brandbook, served on the live widget's addresses with real tenant data"
+      "description": "Design and build a fully custom loyalty widget skin from a brand's website, source code, code pasted into the chat, or brandbook, with no browser required, previewed on the live widget's addresses with real data"
     }
   ]
 }
