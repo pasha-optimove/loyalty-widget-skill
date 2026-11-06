@@ -1,0 +1,17 @@
+{
+  "name": "loyalty-widget-skill",
+  "owner": {
+    "name": "Optimove Gamification Team"
+  },
+  "metadata": {
+    "description": "Claude Code skills for building custom gamify (opti-ls) loyalty widget skins",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "loyalty-widget",
+      "source": "./plugins/loyalty-widget",
+      "description": "Design and build a fully custom loyalty widget skin from a brand's website or brandbook, served on the live widget's addresses with real tenant data"
+    }
+  ]
+}
